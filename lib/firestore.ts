@@ -56,6 +56,46 @@ export async function updateSubject(uid: string, subjectId: string, data: Record
   await updateDoc(doc(db, 'users', uid, 'subjects', subjectId), data);
 }
 
+export async function deleteSubject(uid: string, subjectId: string) {
+  await deleteDoc(doc(db, 'users', uid, 'subjects', subjectId));
+}
+
+// ── Marks (per subject subcollection) ────────────────────────────────────────
+
+export async function getMarks(uid: string, subjectId: string) {
+  const snap = await getDocs(collection(db, 'users', uid, 'subjects', subjectId, 'marks'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function addMark(uid: string, subjectId: string, data: Record<string, unknown>) {
+  return addDoc(collection(db, 'users', uid, 'subjects', subjectId, 'marks'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function deleteMark(uid: string, subjectId: string, markId: string) {
+  await deleteDoc(doc(db, 'users', uid, 'subjects', subjectId, 'marks', markId));
+}
+
+// ── Study Materials (per subject subcollection) ───────────────────────────────
+
+export async function getMaterials(uid: string, subjectId: string) {
+  const snap = await getDocs(collection(db, 'users', uid, 'subjects', subjectId, 'materials'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function addMaterial(uid: string, subjectId: string, data: Record<string, unknown>) {
+  return addDoc(collection(db, 'users', uid, 'subjects', subjectId, 'materials'), {
+    ...data,
+    uploadedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteMaterial(uid: string, subjectId: string, materialId: string) {
+  await deleteDoc(doc(db, 'users', uid, 'subjects', subjectId, 'materials', materialId));
+}
+
 // ── Attendance ────────────────────────────────────────────────────────────────
 
 export async function getAttendance(uid: string) {
@@ -65,6 +105,10 @@ export async function getAttendance(uid: string) {
 
 export async function setAttendance(uid: string, subjectId: string, data: Record<string, unknown>) {
   await setDoc(doc(db, 'users', uid, 'attendance', subjectId), data, { merge: true });
+}
+
+export async function deleteAttendance(uid: string, subjectId: string) {
+  await deleteDoc(doc(db, 'users', uid, 'attendance', subjectId));
 }
 
 // ── Timetable ─────────────────────────────────────────────────────────────────

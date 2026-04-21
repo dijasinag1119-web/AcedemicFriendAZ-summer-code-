@@ -75,7 +75,7 @@ function createDefaultUserData(user: User): UserData {
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]         = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -155,12 +155,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = useCallback(async () => {
+    // Ye line force karegi ki Google account picker dikhayega
+    googleProvider.setCustomParameters({ prompt: 'select_account' });
     await signInWithPopup(auth, googleProvider);
   }, []);
 
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setUserData(null);
+    // White screen fix: Hard reload to login page
+    window.location.href = '/login';
   }, []);
 
   const updateUserData = useCallback(async (data: Partial<UserData>) => {

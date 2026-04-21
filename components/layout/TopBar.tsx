@@ -1,6 +1,6 @@
 'use client';
-// components/layout/TopBar.tsx
-import { Bell, Menu, Flame, Zap } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Bell, Menu, Flame, Zap, Sun, Moon } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { calculateLevel, xpInCurrentLevel } from '@/lib/xpSystem';
 import { getGreeting } from '@/lib/dateUtils';
@@ -13,6 +13,20 @@ interface TopBarProps {
 
 export default function TopBar({ breadcrumb, onMenuClick }: TopBarProps) {
   const { userData } = useAuth();
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // Read saved theme on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('edupro-theme') as 'dark' | 'light' | null;
+    setTheme(saved || 'dark');
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('edupro-theme', next);
+  };
 
   const xp      = userData?.xp ?? 0;
   const level   = calculateLevel(xp);
@@ -58,6 +72,7 @@ export default function TopBar({ breadcrumb, onMenuClick }: TopBarProps) {
 
       {/* Right side badges */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+
         {/* XP badge */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: '6px',
@@ -85,6 +100,23 @@ export default function TopBar({ breadcrumb, onMenuClick }: TopBarProps) {
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b' }}>{streak}</span>
           </div>
         )}
+
+        {/* 🌙 / ☀️ Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          className="btn-ghost"
+          style={{
+            padding: '7px', borderRadius: '10px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.2s',
+          }}
+        >
+          {theme === 'dark'
+            ? <Sun size={16} color="#f59e0b" />
+            : <Moon size={16} color="#6366f1" />
+          }
+        </button>
 
         {/* Notification bell */}
         <button className="btn-ghost" style={{ padding: '7px', borderRadius: '10px', display: 'flex', position: 'relative' }}>

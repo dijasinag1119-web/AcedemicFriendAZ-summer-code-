@@ -30,19 +30,19 @@ const SUB_COLORS: Record<string, string> = {
   dsa: '#6366f1', dbms: '#8b5cf6', os: '#06b6d4', cn: '#10b981', se: '#f59e0b', maths: '#f43f5e',
 };
 
-const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 export default function DashboardPage() {
   const { userData, updateUserData, awardXP } = useAuth();
   const { addToast, triggerXPPopup } = useAppContext();
 
-  const [tasks,       setTasks]       = useState<any[]>([]);
-  const [subjects,    setSubjects]    = useState<any[]>([]);
-  const [attendance,  setAttendance]  = useState<any[]>([]);
-  const [timetable,   setTimetable]   = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<any[]>([]);
+  const [timetable, setTimetable] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
-  const [exams,       setExams]       = useState<any[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [exams, setExams] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const uid = userData?.uid;
 
@@ -92,9 +92,9 @@ export default function DashboardPage() {
   }, [uid, awardXP, triggerXPPopup, addToast]);
 
   // Time-aware data
-  const today      = new Date();
-  const todayDow   = today.getDay(); // 0-6
-  const todayStr   = toDateStr();
+  const today = new Date();
+  const todayDow = today.getDay(); // 0-6
+  const todayStr = toDateStr();
 
   const todayClasses = timetable
     .filter(t => t.dayOfWeek === todayDow)
@@ -129,11 +129,11 @@ export default function DashboardPage() {
     ...exams.filter((e: any) => e.date >= todayStr).map(e => ({ ...e, title: `${e.subjectName} ${e.examType}`, dueDate: e.date, type: 'Exam' })),
   ].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
 
-  const xp      = userData?.xp ?? 0;
-  const level   = calculateLevel(xp);
+  const xp = userData?.xp ?? 0;
+  const level = calculateLevel(xp);
   const xpInLvl = xpInCurrentLevel(xp);
-  const toNext  = xpToNextLevel(xp);
-  const streak  = userData?.currentStreak ?? 0;
+  const toNext = xpToNextLevel(xp);
+  const streak = userData?.currentStreak ?? 0;
 
   const completedToday = tasks.filter(t => t.done).length;
 
@@ -235,7 +235,7 @@ export default function DashboardPage() {
                 {todayClasses.map((c: any, i) => {
                   const minsLeft = minutesUntil(c.startTime);
                   const isNext = c.id === nextClass?.id;
-                  const isNow  = minutesUntil(c.startTime) <= 0 && minutesUntil(c.endTime) > 0;
+                  const isNow = minutesUntil(c.startTime) <= 0 && minutesUntil(c.endTime) > 0;
                   return (
                     <motion.div
                       key={c.id}

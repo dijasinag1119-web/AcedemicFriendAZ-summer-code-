@@ -1,7 +1,6 @@
 'use client';
-// app/subjects/page.tsx — Subject cards grid
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { useAppContext } from '@/context/AppContext';
@@ -9,20 +8,25 @@ import PageWrapper from '@/components/layout/PageWrapper';
 import Modal from '@/components/ui/Modal';
 import ProgressRing from '@/components/ui/ProgressRing';
 import SkeletonCard from '@/components/ui/SkeletonCard';
-import { getSubjects, setSubject } from '@/lib/firestore';
-import { Plus, BookOpen, ChevronRight } from 'lucide-react';
+import { getSubjects, setSubject, updateSubject, deleteSubject } from '@/lib/firestore';
+import { Plus, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 
 const COLORS = ['#6366f1','#8b5cf6','#06b6d4','#10b981','#f59e0b','#f43f5e','#ec4899','#84cc16'];
-const ICONS  = ['📚','🧮','💻','🌐','⚙️','📐','🔬','🎯'];
+const ICONS  = ['📚','🧮','💻','🌐','⚙️','📐','🔬','🎯','🎨','🏛️','⚗️','🌿'];
+
+const emptyForm = { name: '', icon: '📚', color: '#6366f1', credits: 4 };
 
 export default function SubjectsPage() {
   const { userData } = useAuth();
   const { addToast } = useAppContext();
 
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [addOpen,  setAddOpen]  = useState(false);
-  const [form, setForm] = useState({ name: '', icon: '📚', color: '#6366f1', credits: 4 });
+  const [subjects, setSubjects]       = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [modalOpen, setModalOpen]     = useState(false);
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [form, setForm]               = useState(emptyForm);
+  const [saving, setSaving]           = useState(false);
+  const [hoveredId, setHoveredId]     = useState<string | null>(null);
 
   const uid = userData?.uid;
 
@@ -40,24 +44,68 @@ export default function SubjectsPage() {
     finally { setLoading(false); }
   };
 
-  const handleAddSubject = async () => {
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+
+  const openEdit = (s: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingId(s.id);
+    setForm({ name: s.name, icon: s.icon || '📚', color: s.color || '#6366f1', credits: s.credits || 4 });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
     if (!uid || !form.name.trim()) return;
-    const id = `subj_${Date.now()}`;
-    const subData = {
-      name:     form.name.trim(),
-      icon:     form.icon,
-      color:    form.color,
-      credits:  form.credits,
-      progress: 0,
-      chapters: [],
-    };
+    setSaving(true);
     try {
-      await setSubject(uid, id, subData);
-      setSubjects(prev => [...prev, { id, ...subData }]);
-      setAddOpen(false);
-      setForm({ name: '', icon: '📚', color: '#6366f1', credits: 4 });
-      addToast('Subject added!', 'success');
-    } catch { addToast('Failed to add subject', 'error'); }
+      if (editingId) {
+        // Update existing
+        await updateSubject(uid, editingId, {
+          name: form.name.trim(),
+          icon: form.icon,
+          color: form.color,
+          credits: form.credits,
+        });
+        setSubjects(prev => prev.map(s =>
+          s.id === editingId ? { ...s, name: form.name.trim(), icon: form.icon, color: form.color, credits: form.credits } : s
+        ));
+        addToast('Subject updated!', 'success');
+      } else {
+        // Add new
+        const id = `subj_${Date.now()}`;
+        const subData = {
+          name: form.name.trim(),
+          icon: form.icon,
+          color: form.color,
+          credits: form.credits,
+          progress: 0,
+          chapters: [],
+        };
+        await setSubject(uid, id, subData);
+        setSubjects(prev => [...prev, { id, ...subData }]);
+        addToast('Subject added!', 'success');
+      }
+      setModalOpen(false);
+      setForm(emptyForm);
+      setEditingId(null);
+    } catch { addToast('Failed to save subject', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (s: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!uid) return;
+    if (!confirm(`Delete "${s.name}" and all its data? This cannot be undone.`)) return;
+    try {
+      await deleteSubject(uid, s.id);
+      setSubjects(prev => prev.filter(x => x.id !== s.id));
+      addToast('Subject deleted', 'success');
+    } catch { addToast('Failed to delete subject', 'error'); }
   };
 
   const overallProgress = subjects.length > 0
@@ -66,17 +114,20 @@ export default function SubjectsPage() {
 
   return (
     <PageWrapper breadcrumb="Subjects">
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 style={{ fontFamily: 'Sora,sans-serif', fontWeight: 800, fontSize: '24px', color: 'var(--text)' }}>Subjects</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>{subjects.length} subjects · {overallProgress}% overall progress</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
+            {subjects.length} subjects · {overallProgress}% overall progress
+          </p>
         </div>
-        <button onClick={() => setAddOpen(true)} className="btn-primary" style={{ padding: '10px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', fontSize: '14px' }}>
+        <button onClick={openAdd} className="btn-primary" style={{ padding: '10px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', fontSize: '14px' }}>
           <Plus size={16} /> Add Subject
         </button>
       </div>
 
-      {/* Overall Progress */}
+      {/* Overall Progress bar */}
       {subjects.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -103,18 +154,64 @@ export default function SubjectsPage() {
 
       {/* Grid */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-          {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} height={200} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+          {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} height={210} />)}
         </div>
       ) : subjects.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
           {subjects.map((s, i) => (
             <motion.div
               key={s.id}
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06 }}
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setHoveredId(s.id)}
+              onMouseLeave={() => setHoveredId(null)}
             >
+              {/* Edit / Delete action buttons — visible on hover */}
+              <AnimatePresence>
+                {hoveredId === s.id && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.85 }}
+                    transition={{ duration: 0.15 }}
+                    style={{
+                      position: 'absolute', top: '12px', right: '12px',
+                      display: 'flex', gap: '6px', zIndex: 10,
+                    }}
+                  >
+                    <button
+                      onClick={(e) => openEdit(s, e)}
+                      title="Edit subject"
+                      style={{
+                        width: '32px', height: '32px', borderRadius: '8px',
+                        background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)',
+                        color: '#6366f1', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        backdropFilter: 'blur(8px)',
+                      }}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(s, e)}
+                      title="Delete subject"
+                      style={{
+                        width: '32px', height: '32px', borderRadius: '8px',
+                        background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.3)',
+                        color: '#f43f5e', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        backdropFilter: 'blur(8px)',
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <Link href={`/subjects/${s.id}`} style={{ textDecoration: 'none' }}>
                 <div
                   className="glass-card card-hover"
@@ -142,12 +239,18 @@ export default function SubjectsPage() {
                   <h3 style={{ fontFamily: 'Sora,sans-serif', fontWeight: 700, fontSize: '16px', color: 'var(--text)', marginBottom: '4px' }}>
                     {s.name}
                   </h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
                     {(s.chapters || []).length} chapters · {s.credits || 0} credits
                   </p>
+                  {/* Marks avg badge if available */}
+                  {s.marksAvg != null && (
+                    <p style={{ fontSize: '12px', color: s.color, fontWeight: 600, marginBottom: '4px' }}>
+                      Avg marks: {s.marksAvg}%
+                    </p>
+                  )}
 
                   {/* Progress bar */}
-                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.07)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.07)', borderRadius: '10px', overflow: 'hidden', marginBottom: '12px', marginTop: '10px' }}>
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${s.progress || 0}%` }}
@@ -156,7 +259,7 @@ export default function SubjectsPage() {
                     />
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '12px', color: s.color, fontWeight: 600 }}>
                       {(s.chapters || []).filter((c: any) => c.status === 'done').length}/
                       {(s.chapters || []).length} chapters done
@@ -173,15 +276,15 @@ export default function SubjectsPage() {
           <div style={{ fontSize: '64px', marginBottom: '16px' }}>📚</div>
           <h3 style={{ fontFamily: 'Sora,sans-serif', fontWeight: 700, fontSize: '20px', color: 'var(--text)', marginBottom: '8px' }}>No subjects yet</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>Add your first subject to get started!</p>
-          <button onClick={() => setAddOpen(true)} className="btn-primary" style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', fontSize: '14px' }}>
+          <button onClick={openAdd} className="btn-primary" style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', fontSize: '14px' }}>
             <Plus size={16} style={{ display: 'inline', marginRight: '6px' }} />
             Add Subject
           </button>
         </div>
       )}
 
-      {/* Add Subject Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add New Subject">
+      {/* Add / Edit Subject Modal */}
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditingId(null); setForm(emptyForm); }} title={editingId ? 'Edit Subject' : 'Add New Subject'}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>Subject Name *</label>
@@ -218,8 +321,13 @@ export default function SubjectsPage() {
               ))}
             </div>
           </div>
-          <button onClick={handleAddSubject} disabled={!form.name.trim()} className="btn-primary" style={{ padding: '12px', borderRadius: '12px', border: 'none', fontSize: '14px', marginTop: '8px' }}>
-            Add Subject
+          <button
+            onClick={handleSave}
+            disabled={!form.name.trim() || saving}
+            className="btn-primary"
+            style={{ padding: '12px', borderRadius: '12px', border: 'none', fontSize: '14px', marginTop: '8px' }}
+          >
+            {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Subject'}
           </button>
         </div>
       </Modal>

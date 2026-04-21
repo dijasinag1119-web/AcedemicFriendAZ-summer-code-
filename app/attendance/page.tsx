@@ -35,12 +35,17 @@ export default function AttendancePage() {
   const { userData, awardXP } = useAuth();
   const { addToast, triggerXPPopup } = useAppContext();
 
-  const [entries,  setEntries]  = useState<AttendanceEntry[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [entries, setEntries] = useState<AttendanceEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [markDate, setMarkDate] = useState(toDateStr());
-  const [marks, setMarks]       = useState<Record<string, 'present' | 'absent' | 'holiday'>>({});
-  const [saving,   setSaving]   = useState(false);
+  const [marks, setMarks] = useState<Record<string, 'present' | 'absent' | 'holiday'>>({});
+  const [saving, setSaving] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [editingSubject, setEditingSubject] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [showAddSubject, setShowAddSubject] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newSubjectColor, setNewSubjectColor] = useState('#6366f1');
 
   const uid = userData?.uid;
 
@@ -54,12 +59,12 @@ export default function AttendancePage() {
     try {
       const data = await getAttendance(uid) as any[];
       const mapped: AttendanceEntry[] = data.map(d => ({
-        subjectId:    d.subjectId || d.id,
-        subjectName:  SUBJECT_NAMES[d.subjectId || d.id] || d.subjectId,
-        color:        SUBJECT_COLORS[d.subjectId || d.id] || '#6366f1',
+        subjectId: d.subjectId || d.id,
+        subjectName: SUBJECT_NAMES[d.subjectId || d.id] || d.subjectId,
+        color: SUBJECT_COLORS[d.subjectId || d.id] || '#6366f1',
         totalClasses: d.totalClasses || 0,
         presentCount: d.presentCount || 0,
-        records:      d.records || [],
+        records: d.records || [],
       }));
       setEntries(mapped);
       // Init mark form with today's existing marks
@@ -89,10 +94,10 @@ export default function AttendancePage() {
     if (dayRecords.length === 0) return null;
     const holidays = dayRecords.filter((r: any) => r.status === 'holiday').length;
     if (holidays === dayRecords.length) return 'holiday';
-    const presents  = dayRecords.filter((r: any) => r.status === 'present').length;
-    const nonHol    = dayRecords.filter((r: any) => r.status !== 'holiday').length;
+    const presents = dayRecords.filter((r: any) => r.status === 'present').length;
+    const nonHol = dayRecords.filter((r: any) => r.status !== 'holiday').length;
     if (presents === nonHol) return 'present';
-    if (presents === 0)      return 'absent';
+    if (presents === 0) return 'absent';
     return 'partial';
   }, [entries]);
 
@@ -105,7 +110,7 @@ export default function AttendancePage() {
         if (!status) continue;
 
         const existingIdx = entry.records.findIndex((r: any) => r.date === markDate);
-        const newRecords  = [...entry.records];
+        const newRecords = [...entry.records];
         if (existingIdx >= 0) {
           newRecords[existingIdx] = { date: markDate, status };
         } else {
@@ -113,7 +118,7 @@ export default function AttendancePage() {
         }
 
         let newPresent = newRecords.filter((r: any) => r.status === 'present').length;
-        let newTotal   = newRecords.filter((r: any) => r.status !== 'holiday').length;
+        let newTotal = newRecords.filter((r: any) => r.status !== 'holiday').length;
 
         await setAttendance(uid, entry.subjectId, {
           subjectId: entry.subjectId,
@@ -133,7 +138,52 @@ export default function AttendancePage() {
       setSaving(false);
     }
   };
+  const handleRenameSubject = async (subjectId: string) => {
+    if (!uid || !editName.trim()) return;
+    try {
+      await setAttendance(uid, subjectId, { subjectName: editName.trim() });
+      const updated = entries.map(e =>
+        e.subjectId === subjectId ? { ...e, subjectName: editName.trim() } : e
+      );
+      setEntries(updated);
+      setEditingSubject(null);
+      addToast('Subject renamed!', 'success');
+    } catch {
+      addToast('Failed to rename subject', 'error');
+    }
+  };
 
+  const handleDeleteSubject = async (subjectId: string) => {
+    if (!uid) return;
+    if (!confirm('Delete this subject and all its attendance records?')) return;
+    try {
+      const { deleteAttendance } = await import('@/lib/firestore');
+      await deleteAttendance(uid, subjectId);
+      setEntries(prev => prev.filter(e => e.subjectId !== subjectId));
+      addToast('Subject deleted', 'success');
+    } catch {
+      addToast('Failed to delete subject', 'error');
+    }
+  };
+
+  const handleAddSubject = async () => {
+    if (!newSubjectName.trim()) return;
+    const id = newSubjectName.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+    const newEntry: AttendanceEntry = {
+      subjectId: id,
+      subjectName: newSubjectName.trim(),
+      color: newSubjectColor,
+      totalClasses: 0,
+      presentCount: 0,
+      records: [],
+    };
+    if (uid) await setAttendance(uid, id, { subjectId: id, subjectName: newEntry.subjectName, color: newEntry.color, totalClasses: 0, presentCount: 0, records: [] });
+    setEntries(prev => [...prev, newEntry]);
+    setNewSubjectName('');
+    setNewSubjectColor('#6366f1');
+    setShowAddSubject(false);
+    addToast('Subject added!', 'success');
+  };
   const chartData = entries.map(e => {
     const summary = calcAttendance(e.records);
     return { subject: e.subjectName, percent: summary.percent };
@@ -147,7 +197,7 @@ export default function AttendancePage() {
 
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {[1,2,3].map(i => <SkeletonCard key={i} height={120} />)}
+          {[1, 2, 3].map(i => <SkeletonCard key={i} height={120} />)}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -216,11 +266,46 @@ export default function AttendancePage() {
             className="glass-card"
             style={{ borderRadius: '20px', overflow: 'hidden' }}
           >
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
               <h2 style={{ fontFamily: 'Sora,sans-serif', fontWeight: 700, fontSize: '16px', color: 'var(--text)' }}>
                 Subject-wise Breakdown
               </h2>
+              <button
+                onClick={() => setShowAddSubject(v => !v)}
+                style={{ padding: '7px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: 'var(--accent, #6366f1)' }}
+              >
+                + Add Subject
+              </button>
             </div>
+
+            {/* Add subject form */}
+            {showAddSubject && (
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end', background: 'rgba(99,102,241,0.04)' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>SUBJECT NAME</label>
+                  <input
+                    value={newSubjectName}
+                    onChange={e => setNewSubjectName(e.target.value)}
+                    placeholder="e.g. Physics"
+                    className="input-field"
+                    style={{ width: '160px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>COLOR</label>
+                  <input type="color" value={newSubjectColor} onChange={e => setNewSubjectColor(e.target.value)}
+                    style={{ width: '44px', height: '36px', border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'none' }} />
+                </div>
+                <button onClick={handleAddSubject} className="btn-primary"
+                  style={{ padding: '8px 18px', borderRadius: '10px', fontSize: '13px', border: 'none' }}>
+                  Add
+                </button>
+                <button onClick={() => setShowAddSubject(false)}
+                  style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '13px', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>
+                  Cancel
+                </button>
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -235,8 +320,8 @@ export default function AttendancePage() {
                 <tbody>
                   {entries.map((e, i) => {
                     const summary = calcAttendance(e.records);
-                    const color   = getStatusColor(summary.status);
-                    const needed  = classesNeededFor75(summary.present, summary.total);
+                    const color = getStatusColor(summary.status);
+                    const needed = classesNeededFor75(summary.present, summary.total);
                     const canSkip = classesCanSkip(summary.present, summary.total);
                     return (
                       <motion.tr
@@ -249,7 +334,31 @@ export default function AttendancePage() {
                         <td style={{ padding: '14px 16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: e.color, flexShrink: 0 }} />
-                            <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>{e.subjectName}</span>
+                            {editingSubject === e.subjectId ? (
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                <input
+                                  value={editName}
+                                  onChange={ev => setEditName(ev.target.value)}
+                                  style={{ fontSize: '13px', padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--accent,#6366f1)', background: 'var(--surface2,#1a2236)', color: 'var(--text)', outline: 'none', width: '100px' }}
+                                  autoFocus
+                                  onKeyDown={ev => { if (ev.key === 'Enter') handleRenameSubject(e.subjectId); if (ev.key === 'Escape') setEditingSubject(null); }}
+                                />
+                                <button onClick={() => handleRenameSubject(e.subjectId)}
+                                  style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: '#10b981', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600 }}>✓</button>
+                                <button onClick={() => setEditingSubject(null)}
+                                  style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: 'transparent', color: 'var(--text-dim)', border: '1px solid var(--border)', cursor: 'pointer' }}>✕</button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>{e.subjectName}</span>
+                                <button onClick={() => { setEditingSubject(e.subjectId); setEditName(e.subjectName); }}
+                                  title="Rename"
+                                  style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '5px', background: 'rgba(99,102,241,0.1)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)', cursor: 'pointer' }}>✎</button>
+                                <button onClick={() => handleDeleteSubject(e.subjectId)}
+                                  title="Delete"
+                                  style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '5px', background: 'rgba(244,63,94,0.1)', color: '#f43f5e', border: '1px solid rgba(244,63,94,0.2)', cursor: 'pointer' }}>🗑</button>
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td style={{ padding: '14px 16px', fontSize: '14px', color: 'var(--text-muted)' }}>{summary.total}</td>
@@ -272,8 +381,8 @@ export default function AttendancePage() {
                           {summary.status !== 'safe' && needed > 0
                             ? <span style={{ color: '#f59e0b' }}>Attend {needed} more to reach 75%</span>
                             : canSkip > 0
-                            ? <span style={{ color: '#10b981' }}>Can skip {canSkip} more</span>
-                            : <span style={{ color: '#10b981' }}>✓ Safe</span>
+                              ? <span style={{ color: '#10b981' }}>Can skip {canSkip} more</span>
+                              : <span style={{ color: '#10b981' }}>✓ Safe</span>
                           }
                         </td>
                       </motion.tr>
