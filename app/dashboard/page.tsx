@@ -19,7 +19,7 @@ import {
 } from '@/lib/dateUtils';
 import { calculateLevel, xpInCurrentLevel, xpToNextLevel, XP_REWARDS } from '@/lib/xpSystem';
 import {
-  getTasks, updateTask, getSubjects,
+  getTasks, updateTask, getSubjects, getMarks,
   getAttendance, getTimetable, getAssignments, getExams, updateActivity, updateUser,
 } from '@/lib/firestore';
 import { calcAttendance } from '@/lib/attendanceUtils';
@@ -42,6 +42,11 @@ export default function DashboardPage() {
   const [timetable, setTimetable] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
+  const [academicStats, setAcademicStats] = useState<{
+    avgScore: number;
+    topSubject: any;
+    focusSubject: any;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const uid = userData?.uid;
@@ -54,12 +59,42 @@ export default function DashboardPage() {
           getTasks(uid), getSubjects(uid), getAttendance(uid),
           getTimetable(uid), getAssignments(uid), getExams(uid),
         ]);
+        
         setTasks(t as any[]);
         setSubjects(s as any[]);
         setAttendance(a as any[]);
         setTimetable(tt as any[]);
         setAssignments(asgn as any[]);
         setExams(ex as any[]);
+
+        // Fetch marks for all subjects to calculate insights
+        const subjectsList = s as any[];
+        if (subjectsList.length > 0) {
+          const marksPromises = subjectsList.map(sub => getMarks(uid, sub.id));
+          const allMarksResults = await Promise.all(marksPromises);
+          
+          let totalPct = 0;
+          let count = 0;
+          let highest = { pct: -1, sub: null as any };
+          let lowest = { pct: 101, sub: null as any };
+
+          allMarksResults.forEach((mList, idx) => {
+            if (mList.length > 0) {
+              const subPct = mList.reduce((acc, m: any) => acc + (m.obtained / m.maxMarks), 0) / mList.length;
+              const pct100 = Math.round(subPct * 100);
+              totalPct += pct100;
+              count++;
+              if (pct100 > highest.pct) highest = { pct: pct100, sub: subjectsList[idx] };
+              if (pct100 < lowest.pct) lowest = { pct: pct100, sub: subjectsList[idx] };
+            }
+          });
+
+          setAcademicStats({
+            avgScore: count > 0 ? Math.round(totalPct / count) : 0,
+            topSubject: highest.sub,
+            focusSubject: lowest.sub
+          });
+        }
       } catch (err) {
         addToast('Failed to load dashboard data', 'error');
       } finally {
@@ -308,6 +343,77 @@ export default function DashboardPage() {
                 No tasks yet. <Link href="/assignments" style={{ color: 'var(--primary)' }}>Add some →</Link>
               </div>
             )}
+          </div>
+
+          {/* Academic Intelligence Section */}
+          <div className="glass-card" style={{ borderRadius: '20px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
+             <div style={{ position: 'absolute', bottom: '-20px', right: '-20px', width: '120px', height: '120px', background: 'rgba(139,92,246,0.05)', borderRadius: '50%', filter: 'blur(30px)' }} />
+             
+             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+               <div>
+                  <h2 style={{ fontFamily: 'Sora,sans-serif', fontWeight: 800, fontSize: '18px', color: 'var(--text)', marginBottom: '4px' }}>
+                    Academic Intelligence
+                  </h2>
+                  <p style={{ fontSize: '13px', color: 'var(--text-dim)' }}>Performance analysis across all subjects</p>
+               </div>
+               <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary)', fontFamily: 'Sora,sans-serif' }}>{academicStats?.avgScore || 0}%</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Overall Avg</div>
+               </div>
+             </div>
+
+             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="sm:grid-cols-2 grid-cols-1">
+                {/* Top Subject */}
+                <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '16px', padding: '16px' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <div style={{ background: 'rgba(16,185,129,0.2)', padding: '6px', borderRadius: '10px' }}><Target size={16} color="#10b981" /></div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase' }}>Top Performing</span>
+                   </div>
+                   {academicStats?.topSubject ? (
+                      <div>
+                         <p style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)', marginBottom: '2px' }}>{academicStats.topSubject.name}</p>
+                         <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Consistency is key! 🙌</p>
+                      </div>
+                   ) : (
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Add some marks to see! 📈</p>
+                   )}
+                </div>
+
+                {/* Focus Subject */}
+                <div style={{ background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.15)', borderRadius: '16px', padding: '16px' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <div style={{ background: 'rgba(244,63,94,0.2)', padding: '6px', borderRadius: '10px' }}><Zap size={16} color="#f43f5e" /></div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#f43f5e', textTransform: 'uppercase' }}>Needs Focus</span>
+                   </div>
+                   {academicStats?.focusSubject ? (
+                      <div>
+                         <p style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)', marginBottom: '2px' }}>{academicStats.focusSubject.name}</p>
+                         <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Check the vault for help! 📚</p>
+                      </div>
+                   ) : (
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Tracking your progress... 🔍</p>
+                   )}
+                </div>
+             </div>
+
+             <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                   <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <BookOpen size={20} color="var(--primary)" />
+                   </div>
+                   <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Suggested next action:</p>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                         {academicStats?.focusSubject 
+                           ? `Review chapter notes for ${academicStats.focusSubject.name} to boost your internal score.` 
+                           : "Upload some study materials to the vault to earn more XP!"}
+                      </p>
+                   </div>
+                   <Link href="/subjects">
+                      <button className="btn-primary" style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}>Review</button>
+                   </Link>
+                </div>
+             </div>
           </div>
 
           {/* Subject Progress Strip */}

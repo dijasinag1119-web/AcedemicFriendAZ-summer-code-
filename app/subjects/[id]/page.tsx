@@ -269,7 +269,9 @@ export default function SubjectDetailPage() {
       setMarks(prev => [...prev, { id: (docRef as any).id, ...data } as Mark]);
       setMarkModal(false);
       setMarkForm({ examType: 'Test', examName: '', obtained: '', maxMarks: '', date: new Date().toISOString().slice(0,10), notes: '' });
-      addToast('Mark added!', 'success');
+      await awardXP(XP_REWARDS.ADD_MARK);
+      triggerXPPopup(XP_REWARDS.ADD_MARK);
+      addToast(`+${XP_REWARDS.ADD_MARK} XP! Mark added!`, 'success');
     } catch { addToast('Failed to add mark', 'error'); }
     finally { setSavingMark(false); }
   };
@@ -300,37 +302,73 @@ export default function SubjectDetailPage() {
     const isLink = materialForm.type === 'video_link' || materialForm.type === 'resource_link';
     if (!isLink && !uploadFile) { addToast('Please select a file', 'error'); return; }
     if (isLink && !materialForm.url.trim()) { addToast('Please enter a URL', 'error'); return; }
+
+    // Block files over 5MB
+    if (!isLink && uploadFile && Number(uploadFile.size) > 5 * 1024 * 1024) {
+      addToast('File too large. Maximum size is 5MB.', 'error');
+      return;
+    }
+
     setSavingMaterial(true);
+    setUploadProgress(10); // Initial start
+    
     try {
       let finalUrl = materialForm.url;
       let storagePath: string | undefined;
-      let fileSize: string | undefined;
+      const fileSizeNum = uploadFile ? Number(uploadFile.size) : 0;
+      const fileSizeFormatted = uploadFile ? formatFileSize(fileSizeNum) : undefined;
+
+      console.log('--- Upload Started ---');
+      console.log('File Name:', uploadFile?.name);
+      console.log('File Size (bytes):', fileSizeNum);
+      console.log('Threshold (bytes):', 800 * 1024);
 
       if (!isLink && uploadFile) {
-        storagePath = `users/${uid}/subjects/${id}/materials/${Date.now()}_${uploadFile.name}`;
-        const storageRef = ref(storage, storagePath);
-        try {
-          setUploadProgress(30); // show progress indicator
-          const snapshot = await uploadBytes(storageRef, uploadFile);
-          setUploadProgress(90);
-          finalUrl = await getDownloadURL(snapshot.ref);
-          setUploadProgress(100);
-        } catch (storageErr: any) {
-          let msg = 'Upload failed';
-          if (storageErr?.code === 'storage/unauthorized') {
-            msg = '🔒 Firebase Storage rules blocking upload. Go to Firebase Console → Storage → Rules and allow: if request.auth != null';
-          } else if (storageErr?.code === 'storage/unauthenticated') {
-            msg = 'You must be logged in to upload.';
-          } else {
-            msg = `Upload error: ${storageErr?.message || storageErr?.code || 'Unknown'}`;
+        // MANDATORY: Files under 800KB MUST go through Base64 path to avoid Storage hanging
+        if (fileSizeNum <= 800 * 1024) {
+          console.log('Routing to Base64 (Firestore) path...');
+          setUploadProgress(40);
+          try {
+            finalUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error('Failed to read file for Base64 conversion'));
+              reader.readAsDataURL(uploadFile);
+            });
+            setUploadProgress(100);
+            console.log('Base64 conversion successful!');
+          } catch (readErr: any) {
+            throw new Error(`File read error: ${readErr.message}`);
           }
-          addToast(msg, 'error');
-          console.error('Firebase Storage error:', storageErr?.code, storageErr?.message);
-          setSavingMaterial(false);
-          setUploadProgress(0);
-          return;
+        } else {
+          // Files > 800KB: try Firebase Storage
+          console.log('Routing to Firebase Storage path...');
+          storagePath = `users/${uid}/subjects/${id}/materials/${Date.now()}_${uploadFile.name}`;
+          const storageRef = ref(storage, storagePath);
+          setUploadProgress(30);
+          
+          try {
+            const uploadPromise = uploadBytes(storageRef, uploadFile);
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Storage upload timed out (30s). Check Firebase Storage rules.')), 30000)
+            );
+            
+            const snapshot = await Promise.race([uploadPromise, timeoutPromise]) as any;
+            setUploadProgress(90);
+            finalUrl = await getDownloadURL(snapshot.ref);
+            setUploadProgress(100);
+            console.log('Storage upload successful!');
+          } catch (storageErr: any) {
+            const msg = storageErr?.code === 'storage/unauthorized'
+              ? '🔒 Storage rules blocked. Allow if request.auth != null'
+              : `Storage error: ${storageErr?.message || 'Check connection'}`;
+            addToast(msg, 'error');
+            console.error('Storage full error:', storageErr);
+            setSavingMaterial(false);
+            setUploadProgress(0);
+            return;
+          }
         }
-        fileSize = formatFileSize(uploadFile.size);
       }
 
       const data: Record<string, unknown> = {
@@ -340,18 +378,21 @@ export default function SubjectDetailPage() {
         url: finalUrl,
         notes: materialForm.notes,
         ...(storagePath && { storagePath }),
-        ...(fileSize && { fileSize }),
+        ...(fileSizeFormatted && { fileSize: fileSizeFormatted }),
+        ...(uploadFile && { fileName: uploadFile.name }),
       };
+
+      console.log('Saving metadata to Firestore...');
       const docRef = await addMaterial(uid, id as string, data);
       setMaterials(prev => [...prev, { id: (docRef as any).id, ...data } as Material]);
       setVaultModal(false);
       resetVaultForm();
-      addToast('Material added!', 'success');
+      await awardXP(XP_REWARDS.UPLOAD_MATERIAL);
+      triggerXPPopup(XP_REWARDS.UPLOAD_MATERIAL);
+      addToast(`+${XP_REWARDS.UPLOAD_MATERIAL} XP! Material added! ✅`, 'success');
     } catch (err: any) {
-      if (!String(err?.code).startsWith('storage/')) {
-        addToast(`Failed: ${err?.message || 'Unknown error'}`, 'error');
-        console.error('Upload error:', err);
-      }
+      addToast(`Error: ${err?.message || 'Upload failed'}`, 'error');
+      console.error('Final Upload Error:', err);
     } finally {
       setSavingMaterial(false);
       setUploadProgress(0);
