@@ -15,7 +15,7 @@ import {
   getMaterials, addMaterial, deleteMaterial,
 } from '@/lib/firestore';
 import { storage } from '@/lib/firebase';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { QUIZ_QUESTIONS, FLASHCARDS } from '@/lib/seedData';
 import { XP_REWARDS } from '@/lib/xpSystem';
 import {
@@ -309,37 +309,27 @@ export default function SubjectDetailPage() {
       if (!isLink && uploadFile) {
         storagePath = `users/${uid}/subjects/${id}/materials/${Date.now()}_${uploadFile.name}`;
         const storageRef = ref(storage, storagePath);
-        await new Promise<void>((resolve, reject) => {
-          const task = uploadBytesResumable(storageRef, uploadFile);
-          task.on(
-            'state_changed',
-            (snap) => {
-              const pct = snap.totalBytes > 0
-                ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
-                : 0;
-              setUploadProgress(pct);
-            },
-            (error: any) => {
-              let msg = 'Upload failed';
-              if (error?.code === 'storage/unauthorized') {
-                msg = '🔒 Storage rules blocking upload. In Firebase Console → Storage → Rules, set: allow read, write: if request.auth != null;';
-              } else if (error?.code === 'storage/unauthenticated') {
-                msg = 'You must be logged in to upload.';
-              } else if (error?.code === 'storage/quota-exceeded') {
-                msg = 'Firebase Storage quota exceeded.';
-              } else if (error?.message) {
-                msg = `Upload error: ${error.message}`;
-              }
-              addToast(msg, 'error');
-              console.error('Firebase Storage error:', error?.code, error?.message);
-              reject(error);
-            },
-            async () => {
-              finalUrl = await getDownloadURL(task.snapshot.ref);
-              resolve();
-            }
-          );
-        });
+        try {
+          setUploadProgress(30); // show progress indicator
+          const snapshot = await uploadBytes(storageRef, uploadFile);
+          setUploadProgress(90);
+          finalUrl = await getDownloadURL(snapshot.ref);
+          setUploadProgress(100);
+        } catch (storageErr: any) {
+          let msg = 'Upload failed';
+          if (storageErr?.code === 'storage/unauthorized') {
+            msg = '🔒 Firebase Storage rules blocking upload. Go to Firebase Console → Storage → Rules and allow: if request.auth != null';
+          } else if (storageErr?.code === 'storage/unauthenticated') {
+            msg = 'You must be logged in to upload.';
+          } else {
+            msg = `Upload error: ${storageErr?.message || storageErr?.code || 'Unknown'}`;
+          }
+          addToast(msg, 'error');
+          console.error('Firebase Storage error:', storageErr?.code, storageErr?.message);
+          setSavingMaterial(false);
+          setUploadProgress(0);
+          return;
+        }
         fileSize = formatFileSize(uploadFile.size);
       }
 

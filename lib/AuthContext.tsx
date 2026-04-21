@@ -151,6 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('Failed to load/create user:', err);
+      // Fallback: use Firebase Auth data so uid is always available
+      // Pages won't get stuck in infinite skeleton even if Firestore rules block reads
+      setUserData(createDefaultUserData(firebaseUser));
     }
   };
 
